@@ -1,0 +1,79 @@
+name: Download and Release Files
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag name (e.g., v0.0.1)'
+        required: true
+        default: 'v0.0.1'
+      release_name:
+        description: 'Release name/title'
+        required: true
+        default: 'Release v0.0.1'
+      release_body:
+        description: 'Release description'
+        required: false
+        default: 'Automated release with downloaded files'
+      prerelease:
+        description: 'Is this a prerelease?'
+        required: false
+        default: 'false'
+        type: boolean
+
+jobs:
+  download-and-release:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Read files configuration
+        id: read-config
+        run: |
+          if [ ! -f "files.json" ]; then
+            echo "Error: files.json not found!"
+            exit 1
+          fi
+          echo "Config file found"
+          cat files.json
+      
+      - name: Download files
+        run: |
+          mkdir -p downloads
+          
+          # Read the JSON file and download each file
+          jq -c '.files[]' files.json | while read -r item; do
+            name=$(echo "$item" | jq -r '.name')
+            url=$(echo "$item" | jq -r '.url')
+            
+            echo "Downloading: $name from $url"
+            
+            # Download the file with the specified name
+            curl -L -o "downloads/$name" "$url"
+            
+            if [ $? -eq 0 ]; then
+              echo "✓ Successfully downloaded: $name"
+            else
+              echo "✗ Failed to download: $name"
+              exit 1
+            fi
+          done
+          
+          echo "All files downloaded successfully!"
+          ls -la downloads/
+      
+      - name: Create Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.release_tag }}
+          name: ${{ github.event.inputs.release_name }}
+          body: ${{ github.event.inputs.release_body }}
+          prerelease: ${{ github.event.inputs.prerelease }}
+          files: downloads/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
